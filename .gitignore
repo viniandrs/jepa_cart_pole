@@ -1,3 +1,6 @@
 .venv
 .vscode
 data
+*__pycache_**
+checkpoints
+/videos/*
