@@ -2,5 +2,5 @@
 .vscode
 data
 *__pycache_**
-checkpoints
-/videos/*
+checkpoints/*
+videos/*
