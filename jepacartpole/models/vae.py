@@ -51,8 +51,7 @@ class VAE(nn.Module):
             nn.ConvTranspose2d(8, image_channels, kernel_size=4, stride=2, padding=1), # output: (1, 400, 600)
             nn.Sigmoid()
         )
-        
-
+    
     def encode(self, x):
         h = self.encoder(x)
         return self.fc_mu(h), self.fc_logvar(h)

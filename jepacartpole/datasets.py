@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-class CartPoleDataset(Dataset):
+class CartPoleVAEDataset(Dataset):
     """
     PyTorch Dataset for CartPole data stored in HDF5 format.
     
@@ -11,7 +11,7 @@ class CartPoleDataset(Dataset):
     and done flags stored in the consolidated HDF5 file.
     """
     
-    def __init__(self, h5_path='../data/cart_pole_data_128.h5', transform=None):
+    def __init__(self, h5_path='../data/vae_data.h5', transform=None):
         """
         Initialize the dataset.
         
