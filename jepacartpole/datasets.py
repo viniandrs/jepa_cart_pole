@@ -11,7 +11,7 @@ class CartPoleVAEDataset(Dataset):
     and done flags stored in the consolidated HDF5 file.
     """
     
-    def __init__(self, h5_path='../data/vae_data.h5', transform=None):
+    def __init__(self, h5_path='../data/vae/vae_data.h5', transform=None):
         """
         Initialize the dataset.
         

@@ -4,3 +4,5 @@ data
 *__pycache_**
 checkpoints/*
 videos/*
+results/*
+.env
