@@ -1,7 +1,8 @@
 .venv
 .vscode
-data
-*__pycache_**
+data/vae/*
+data/jepa/*
+*__pycache__*
 checkpoints/*
 videos/*
 results/*
