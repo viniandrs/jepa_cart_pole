@@ -1,17 +1,17 @@
 import torch
 import torch.nn as nn
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from ..config import ConfigJEPA
 
 class JEPAPredictor(nn.Module):
     """
     Simple MLP predictor that maps (z_t, action_t) -> z_{t+1}
     """
-    def __init__(self, z_dim, action_dim, hidden_dim=128):
+    def __init__(self,  config: ConfigJEPA):
         super(JEPAPredictor, self).__init__()
         
-        self.z_dim = z_dim
-        self.action_dim = action_dim
+        z_dim = config.latent_dim
+        hidden_dim = config.hidden_dim
+        action_dim = 1
         
         # Input size: latent + action
         input_dim = z_dim + action_dim

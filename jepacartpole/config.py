@@ -12,4 +12,7 @@ class ConfigVAE:
 
 @dataclass
 class ConfigJEPA:
-    pass
+    latent_dim: int = 16
+    hidden_dim: int = 128
+    batch_size: int = 128
+    epochs: int = 10

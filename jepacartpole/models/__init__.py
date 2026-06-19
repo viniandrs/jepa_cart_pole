@@ -1,4 +1,4 @@
 from .vae import VAE
-from .predictor import JEPAPredictor
+from .jepa import JEPAPredictor
 
 __all__ = ["VAE", "JEPAPredictor"]
