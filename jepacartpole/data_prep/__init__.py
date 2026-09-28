@@ -19,7 +19,18 @@ from .collector import (
 
 from .merge import (
     merge_episode_files,
-    get_dataset_info
+    get_dataset_info,
+    check_dataset_exists
+)
+
+from .consolidate import (
+    consolidate_episodes_in_chunks,
+    get_chunk_info
+)
+
+from .chunked_dataset import (
+    ChunkedHDF5Dataset,
+    create_chunked_dataset
 )
 
 from .visualization import (
@@ -41,6 +52,12 @@ __all__ = [
     # Merging
     'merge_episode_files',
     'get_dataset_info',
+    'check_dataset_exists',
+    # Consolidation (chunked)
+    'consolidate_episodes_in_chunks',
+    'get_chunk_info',
+    'ChunkedHDF5Dataset',
+    'create_chunked_dataset',
     # Visualization
     'plot_random_samples',
     'plot_episode_sequence',

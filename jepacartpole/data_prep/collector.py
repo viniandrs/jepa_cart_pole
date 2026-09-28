@@ -2,16 +2,19 @@
 Parallel data collection pipeline for CartPole episodes.
 
 This module handles efficient data collection using multiprocessing,
-storing episodes in temporary HDF5 files for later consolidation.
+storing episodes in temporary HDF5 files with S3 support to avoid
+local disk space issues.
 """
 
 import os
 import gc
+import glob
 import numpy as np
 import h5py
 from multiprocessing import Pool, cpu_count, Manager
 from tqdm import tqdm
 from functools import partial
+from pathlib import Path
 from .environment import setup_pygame_headless, create_cartpole_env
 
 
@@ -119,16 +122,45 @@ def collect_data_chunk(args, progress_queue=None):
     return (worker_id, num_episodes)
 
 
+def upload_batch_to_s3(local_dir, s3_manager, s3_prefix, verbose=True):
+    """
+    Upload all HDF5 files in local directory to S3 and delete them locally.
+
+    Args:
+        local_dir (str): Local directory containing HDF5 files
+        s3_manager: S3Manager instance
+        s3_prefix (str): S3 prefix for uploaded files
+        verbose (bool): Print progress messages
+
+    Returns:
+        int: Number of files uploaded
+    """
+    # Find all HDF5 files in local directory
+    local_files = glob.glob(os.path.join(local_dir, '*.h5'))
+
+    if not local_files:
+        return 0
+
+    # Upload files and delete locally
+    uploaded = s3_manager.upload_files(
+        local_files,
+        s3_prefix,
+        delete_after_upload=True
+    )
+
+    return uploaded
+
+
 def collect_data(num_episodes=100, max_steps=500,
                 output_dir=None, num_workers=None,
                 action_interval=20, grayscale=False, verbose=True,
-                chunk_size=None):
+                chunk_size=None, use_s3=False, s3_bucket=None,
+                s3_prefix=None, batch_size=50):
     """
     Collect data from CartPole environment using parallel workers.
 
+    Supports saving to S3 in batches to avoid filling local disk space.
     Each episode is stored in a separate HDF5 file for later consolidation.
-    The workload is distributed across multiple workers with real-time progress
-    tracking showing episodes completed by each worker.
 
     Args:
         num_episodes (int): Total number of episodes to generate
@@ -141,9 +173,13 @@ def collect_data(num_episodes=100, max_steps=500,
         grayscale (bool): If True, collect grayscale observations
         verbose (bool): If True, print progress messages
         chunk_size (int, optional): Episodes per chunk. Defaults to 10 for smooth progress
+        use_s3 (bool): If True, upload files to S3 in batches during collection
+        s3_bucket (str): S3 bucket name (required if use_s3=True)
+        s3_prefix (str): S3 prefix/directory (required if use_s3=True)
+        batch_size (int): Number of episodes to collect before uploading to S3
 
     Returns:
-        str: Path to the output directory containing episode files
+        str: Path to the output directory (local) or S3 prefix
     """
     setup_pygame_headless()
 
@@ -152,6 +188,24 @@ def collect_data(num_episodes=100, max_steps=500,
 
     if num_workers is None:
         num_workers = cpu_count()  # Use ALL available CPUs
+
+    # Validate S3 parameters
+    if use_s3:
+        if not s3_bucket or not s3_prefix:
+            raise ValueError("s3_bucket and s3_prefix are required when use_s3=True")
+
+        # Import S3Manager
+        from jepacartpole.storage import S3Manager
+        s3_manager = S3Manager(s3_bucket, verbose=verbose)
+
+        # Check if files already exist in S3
+        existing_files = s3_manager.list_files(s3_prefix)
+        if existing_files:
+            if verbose:
+                print(f"⚠️  Found {len(existing_files)} existing files in S3")
+                print(f"   s3://{s3_bucket}/{s3_prefix}")
+                print(f"   Skipping data collection - files already exist!")
+            return s3_prefix
 
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -182,12 +236,18 @@ def collect_data(num_episodes=100, max_steps=500,
         print(f"   Chunks: {num_chunks} (~{chunk_size} episodes per chunk)")
         print(f"   Steps per episode: {max_steps}")
         print(f"   Total frames: {num_episodes * max_steps:,}")
-        print(f"   Output directory: {output_dir}\n")
+        if use_s3:
+            print(f"   Storage: S3 (batch size: {batch_size} episodes)")
+            print(f"   S3 Bucket: {s3_bucket}")
+            print(f"   S3 Prefix: {s3_prefix}")
+        else:
+            print(f"   Storage: Local disk")
+            print(f"   Output directory: {output_dir}")
+        print()
 
     # Create a Manager for sharing progress between processes
     manager = Manager()
     progress_queue = manager.Queue()
-    worker_counts = manager.dict({i: 0 for i in range(num_workers)})
 
     # Create partial function with progress_queue bound
     collect_chunk_with_queue = partial(collect_data_chunk, progress_queue=progress_queue)
@@ -203,6 +263,7 @@ def collect_data(num_episodes=100, max_steps=500,
                 # Track episodes per worker
                 worker_episodes = {i: 0 for i in range(num_workers)}
                 completed = 0
+                last_batch_upload = 0
 
                 # Update progress bar as episodes complete
                 while completed < num_episodes:
@@ -215,6 +276,18 @@ def collect_data(num_episodes=100, max_steps=500,
                         worker_info = " | ".join([f"W{i}:{worker_episodes[i]}" for i in range(num_workers)])
                         pbar.set_postfix_str(worker_info)
                         pbar.update(count)
+
+                        # Upload batch to S3 if threshold reached
+                        if use_s3 and (completed - last_batch_upload) >= batch_size:
+                            if verbose:
+                                pbar.write(f"\n📤 Uploading batch to S3 ({completed} episodes collected)...")
+
+                            uploaded = upload_batch_to_s3(output_dir, s3_manager, s3_prefix, verbose=False)
+
+                            if verbose:
+                                pbar.write(f"✅ Uploaded {uploaded} files, freed local disk space\n")
+
+                            last_batch_upload = completed
 
                     # Check if work is done
                     if async_result.ready():
@@ -233,6 +306,17 @@ def collect_data(num_episodes=100, max_steps=500,
         else:
             results = pool.map(collect_chunk_with_queue, chunks)
 
+    # Upload any remaining files to S3
+    if use_s3:
+        if verbose:
+            print(f"\n📤 Uploading final batch to S3...")
+
+        remaining_files = glob.glob(os.path.join(output_dir, '*.h5'))
+        if remaining_files:
+            uploaded = upload_batch_to_s3(output_dir, s3_manager, s3_prefix, verbose=verbose)
+            if verbose:
+                print(f"✅ Uploaded {uploaded} files")
+
     if verbose:
         # Aggregate results by worker
         worker_totals = {}
@@ -249,6 +333,9 @@ def collect_data(num_episodes=100, max_steps=500,
         for worker_id in sorted(worker_totals.keys()):
             print(f"      Worker {worker_id}: {worker_totals[worker_id]} episodes")
 
-        print(f"   Files saved to: {output_dir}")
+        if use_s3:
+            print(f"   Files saved to: s3://{s3_bucket}/{s3_prefix}")
+        else:
+            print(f"   Files saved to: {output_dir}")
 
-    return output_dir
+    return s3_prefix if use_s3 else output_dir
