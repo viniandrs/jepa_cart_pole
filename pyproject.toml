@@ -38,5 +38,6 @@ dev = [
     "ipykernel",
 ]
 
-[tool.setuptools]
-packages = ["jepacartpole"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jepacartpole*"]

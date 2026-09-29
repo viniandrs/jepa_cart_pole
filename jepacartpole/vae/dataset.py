@@ -67,7 +67,12 @@ class CartPoleVAEDataset(Dataset):
 
         return image, action, reward, done
 
-    def __del__(self):
-        """Ensure the HDF5 file is closed when the dataset is deleted."""
+    def close(self):
+        """Explicitly close the HDF5 file handle."""
         if self.h5_file is not None:
             self.h5_file.close()
+            self.h5_file = None
+
+    def __del__(self):
+        """Ensure the HDF5 file is closed when the dataset is deleted."""
+        self.close()

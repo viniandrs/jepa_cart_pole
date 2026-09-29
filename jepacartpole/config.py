@@ -10,6 +10,8 @@ class ConfigVAE:
     image_channels: int = 3
     batch_size: int = 128
     epochs: int = 4
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-6
 
 @dataclass
 class ConfigJEPA:
