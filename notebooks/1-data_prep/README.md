@@ -9,8 +9,9 @@ Main notebook for collecting CartPole episodes and creating the consolidated dat
 
 **What it does:**
 - Introduces the CartPole-v1 environment and pixel observations
-- Runs parallel data collection using multiprocessing
-- Consolidates individual episode files into a single HDF5 dataset
+- Shows the World Models-style preprocessing (crop + resize to 64×64)
+- Runs parallel data collection using multiprocessing (one compressed `.npz` per episode in `data/raw/`)
+- Consolidates the episode files into a single HDF5 dataset
 - Visualizes random samples, episode sequences, and dataset statistics
 - Saves results and visualizations to `results/data_prep/`
 
@@ -27,9 +28,9 @@ All data collection logic is organized in `jepacartpole/data_prep/`:
 ```
 jepacartpole/data_prep/
 ├── __init__.py          # Module exports
-├── environment.py       # Environment creation utilities
+├── environment.py       # Environment creation and frame preprocessing
 ├── collector.py         # Parallel data collection
-├── merge.py            # Dataset consolidation
+├── merge.py             # Dataset consolidation into one HDF5 file
 └── visualization.py    # Visualization tools
 ```
 
@@ -44,7 +45,7 @@ Open and run `1-data_collection.ipynb` in Jupyter. The notebook will:
 
 1. Set up the environment and imports
 2. Demonstrate CartPole pixel observations
-3. Collect episodes using parallel workers
+3. Collect episodes using parallel workers (re-running resumes an interrupted collection)
 4. Merge into a single dataset file
 5. Create comprehensive visualizations
 

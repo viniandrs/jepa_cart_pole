@@ -55,6 +55,7 @@ def plot_random_samples(h5_path, num_samples=9, figsize=(15, 10), save_path=None
         plt.tight_layout()
 
         if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
             print(f"Figure saved to: {save_path}")
 
@@ -118,6 +119,7 @@ def plot_episode_sequence(h5_path, episode_idx=0, num_frames=10,
         plt.tight_layout()
 
         if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
             print(f"Figure saved to: {save_path}")
 
@@ -175,6 +177,7 @@ def plot_dataset_statistics(h5_path, figsize=(15, 5), save_path=None):
         plt.tight_layout()
 
         if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
             print(f"Figure saved to: {save_path}")
 

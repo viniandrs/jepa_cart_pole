@@ -2,10 +2,9 @@
 Visualization utilities for VAE training and evaluation.
 
 Functions for plotting training curves, displaying reconstructions,
-and sampling images from S3 chunks.
+and sampling images from the dataset.
 """
 
-import os
 import random
 from pathlib import Path
 from typing import Optional
@@ -15,7 +14,6 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..storage import S3Manager
 from .dataset import CartPoleVAEDataset
 
 
@@ -71,6 +69,7 @@ def plot_training_curves(
     plt.tight_layout()
 
     if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f"Training curves saved to: {save_path}")
 
@@ -125,6 +124,7 @@ def plot_reconstructions(
     plt.tight_layout()
 
     if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f"Reconstructions saved to: {save_path}")
 
@@ -132,74 +132,27 @@ def plot_reconstructions(
 
 
 def get_sample_images(
-    s3_bucket: str,
-    s3_prefix: str = 'chunks/dataset',
+    h5_path: Optional[str] = None,
     n: int = 8,
-    local_temp_dir: str = '/tmp/vae_viz',
     seed: int = 42
 ) -> torch.Tensor:
     """
-    Download a single random chunk, sample n random images, return as tensor, clean up.
-
-    Utility for notebooks to get sample images for visualization without keeping
-    a chunk around permanently.
+    Sample n random images from the HDF5 dataset.
 
     Args:
-        s3_bucket: S3 bucket name
-        s3_prefix: S3 prefix where chunks are stored
+        h5_path: Path to the HDF5 dataset (default: data/vae/vae_data.h5)
         n: Number of random images to sample
-        local_temp_dir: Local directory for temporary chunk download
         seed: Random seed for reproducibility
 
     Returns:
         torch.Tensor of shape [n, C, H, W] with values in [0, 1]
     """
-    local_temp_dir = Path(local_temp_dir)
-    local_temp_dir.mkdir(parents=True, exist_ok=True)
+    dataset = CartPoleVAEDataset(h5_path=h5_path, in_memory=False)
 
-    # List chunks
-    s3_manager = S3Manager(s3_bucket, verbose=False)
-    chunk_keys = s3_manager.list_files(s3_prefix)
+    rng = random.Random(seed)
+    indices = rng.sample(range(len(dataset)), min(n, len(dataset)))
 
-    if not chunk_keys:
-        raise ValueError(f"No chunk files found in s3://{s3_bucket}/{s3_prefix}")
+    images = torch.stack([dataset[idx][0] for idx in indices])  # [n, C, H, W]
+    dataset.close()
 
-    # Pick a random chunk
-    random.seed(seed)
-    chunk_key = random.choice(chunk_keys)
-    local_chunk_path = local_temp_dir / Path(chunk_key).name
-
-    try:
-        # Download chunk
-        print(f"Downloading chunk: {Path(chunk_key).name}")
-        success = s3_manager.download_file(chunk_key, str(local_chunk_path))
-        if not success:
-            raise RuntimeError(f"Failed to download {chunk_key}")
-
-        # Load dataset and sample
-        dataset = CartPoleVAEDataset(h5_path=str(local_chunk_path))
-
-        # Sample n random indices
-        indices = random.sample(range(len(dataset)), min(n, len(dataset)))
-
-        # Collect images
-        images = []
-        for idx in indices:
-            image, _, _, _ = dataset[idx]
-            images.append(image)
-
-        images = torch.stack(images)  # [n, C, H, W]
-
-        # Clean up
-        dataset.close()
-        del dataset
-
-        print(f"Sampled {len(images)} images from {Path(chunk_key).name}")
-
-        return images
-
-    finally:
-        # Always delete the local chunk file
-        if local_chunk_path.exists():
-            os.remove(local_chunk_path)
-            print(f"Deleted local chunk: {local_chunk_path.name}")
+    return images

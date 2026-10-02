@@ -1,110 +1,68 @@
 """
-Episode consolidation utilities for merging individual HDF5 files.
-
-Supports both local files and S3-stored files for efficient dataset creation.
+Episode consolidation utilities for merging individual episode files
+into a single HDF5 dataset.
 """
 
 import os
 import h5py
-import glob
-import shutil
+import numpy as np
 from tqdm import tqdm
-from pathlib import Path
+from .environment import CROP_TOP, CROP_BOTTOM, FRAME_SIZE
 
 
 def merge_episode_files(episodes_dir, output_file, max_steps=500,
-                       delete_temp_files=True, verbose=True,
-                       use_s3=False, s3_bucket=None, s3_prefix=None):
+                       delete_temp_files=True, verbose=True):
     """
-    Merge multiple episode HDF5 files into a single consolidated dataset.
-
-    Supports downloading from S3 if episode files are stored there.
+    Merge the per-episode .npz files into a single consolidated HDF5 dataset.
 
     The consolidated dataset has the structure:
-        images:  uint8   (num_episodes, max_steps, 400, 600, 3)
+        images:  uint8   (num_episodes, max_steps, 64, 64, C)
         actions: float32 (num_episodes, max_steps)
         rewards: float32 (num_episodes, max_steps)
         dones:   bool    (num_episodes, max_steps)
 
+    The preprocessing parameters (crop rows and frame size) are stored as
+    file attributes.
+
     Args:
-        episodes_dir (str): Directory containing individual episode files (for local storage)
+        episodes_dir (str): Directory containing individual episode files
         output_file (str): Path for the consolidated output file
         max_steps (int): Expected number of steps per episode
-        delete_temp_files (bool): If True, delete temporary episode files after merging
+        delete_temp_files (bool): If True, delete each episode file right after
+                                  it has been written to the merged dataset
         verbose (bool): If True, print progress messages
-        use_s3 (bool): If True, download files from S3 first
-        s3_bucket (str): S3 bucket name (required if use_s3=True)
-        s3_prefix (str): S3 prefix/directory (required if use_s3=True)
 
     Returns:
         dict: Statistics about the merged dataset (num_episodes, max_steps, file_size)
     """
-    temp_download_dir = None
+    episodes_dir = str(episodes_dir)
+    output_file = str(output_file)
 
-    # Handle S3 download if needed
-    if use_s3:
-        if not s3_bucket or not s3_prefix:
-            raise ValueError("s3_bucket and s3_prefix are required when use_s3=True")
-
-        from jepacartpole.storage import S3Manager
-
-        s3_manager = S3Manager(s3_bucket, verbose=verbose)
-
-        # Check if files exist in S3
-        s3_files = s3_manager.list_files(s3_prefix)
-
-        if not s3_files:
-            raise ValueError(f"No HDF5 files found in S3 at s3://{s3_bucket}/{s3_prefix}")
-
-        if verbose:
-            print(f"📥 Found {len(s3_files)} files in S3")
-            print(f"   Downloading to temporary directory...\n")
-
-        # Create temporary directory for downloads
-        temp_download_dir = episodes_dir + '_temp_s3_download'
-        os.makedirs(temp_download_dir, exist_ok=True)
-
-        # Download all files from S3
-        downloaded = s3_manager.download_files(s3_prefix, temp_download_dir)
-
-        if downloaded == 0:
-            raise ValueError(f"Failed to download files from S3")
-
-        # Update episodes_dir to point to downloaded files
-        episodes_dir = temp_download_dir
-
-        if verbose:
-            print(f"\n✅ Downloaded {downloaded} files from S3\n")
-
-    # Step 1: Locate all episode files
-    episode_files = [
+    # Step 1: Locate all episode files (sorted for consistent ordering)
+    episode_files = sorted(
         os.path.join(episodes_dir, f)
         for f in os.listdir(episodes_dir)
-        if f.endswith('.h5') or f.endswith('.hdf5')
-    ]
+        if f.endswith('.npz')
+    )
 
     num_episodes = len(episode_files)
     if num_episodes == 0:
-        raise ValueError(f"No HDF5 episode files found in directory: {episodes_dir}")
+        raise ValueError(f"No .npz episode files found in directory: {episodes_dir}")
 
     if verbose:
         print(f"Found {num_episodes} episode files in '{episodes_dir}'.")
 
-    # Sort files for consistent ordering
-    episode_files.sort()
-
     # Step 2: Verify episode integrity and determine image shape
-    with h5py.File(episode_files[0], 'r') as h5f:
-        first_image = h5f['images'][0]
-        image_shape = first_image.shape  # (height, width, channels)
+    with np.load(episode_files[0]) as ep:
+        image_shape = ep['images'].shape[1:]  # (height, width, channels)
 
     for file in episode_files:
-        with h5py.File(file, 'r') as h5f:
-            actions_shape = h5f['actions'].shape
-            if actions_shape[0] != max_steps:
-                raise ValueError(
-                    f"Episode file {file} has {actions_shape[0]} steps, expected {max_steps}."
-                )
+        with np.load(file) as ep:
+            num_steps = ep['actions'].shape[0]
+        if num_steps != max_steps:
+            raise ValueError(
+                f"Episode file {file} has {num_steps} steps, expected {max_steps}."
+            )
 
     if verbose:
         print(f"Image shape: {image_shape}")
@@ -114,39 +72,28 @@ def merge_episode_files(episodes_dir, output_file, max_steps=500,
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     with h5py.File(output_file, 'w') as merged_h5f:
-        # Initialize datasets with optimized chunking
-        actions_shape = (num_episodes, max_steps)
-        dones_shape = (num_episodes, max_steps)
-        images_shape = (num_episodes, max_steps, *image_shape)
-        rewards_shape = (num_episodes, max_steps)
-
-        merged_h5f.create_dataset('actions', shape=actions_shape,
-                                 dtype='float32', chunks=(1, max_steps))
-        merged_h5f.create_dataset('dones', shape=dones_shape,
-                                 dtype='bool', chunks=(1, max_steps))
-        merged_h5f.create_dataset('images', shape=images_shape,
+        # One HDF5 chunk per episode so whole episodes are read efficiently
+        merged_h5f.create_dataset('images', shape=(num_episodes, max_steps, *image_shape),
                                  dtype='uint8', chunks=(1, max_steps, *image_shape))
-        merged_h5f.create_dataset('rewards', shape=rewards_shape,
+        merged_h5f.create_dataset('actions', shape=(num_episodes, max_steps),
                                  dtype='float32', chunks=(1, max_steps))
+        merged_h5f.create_dataset('rewards', shape=(num_episodes, max_steps),
+                                 dtype='float32', chunks=(1, max_steps))
+        merged_h5f.create_dataset('dones', shape=(num_episodes, max_steps),
+                                 dtype='bool', chunks=(1, max_steps))
+
+        merged_h5f.attrs['crop_rows'] = (CROP_TOP, CROP_BOTTOM)
+        merged_h5f.attrs['frame_size'] = FRAME_SIZE
 
         # Step 4: Iterate through each episode and write to the merged file
         iterator = tqdm(episode_files, desc="Merging Episodes") if verbose else episode_files
 
         for idx, episode_file in enumerate(iterator):
-            with h5py.File(episode_file, 'r') as ep_h5f:
-                # Read datasets from the episode file
-                actions = ep_h5f['actions'][:]
-                dones = ep_h5f['dones'][:]
-                images = ep_h5f['images'][:]
-                rewards = ep_h5f['rewards'][:]
+            with np.load(episode_file) as ep:
+                for key in ('images', 'actions', 'rewards', 'dones'):
+                    merged_h5f[key][idx] = ep[key]
 
-                # Write to the merged datasets
-                merged_h5f['actions'][idx] = actions
-                merged_h5f['dones'][idx] = dones
-                merged_h5f['images'][idx] = images
-                merged_h5f['rewards'][idx] = rewards
-
-    # Step 5: Clean up temporary files if requested
+    # Step 5: Clean up episode files only once the merged file is complete
     if delete_temp_files:
         for episode_file in episode_files:
             try:
@@ -155,27 +102,6 @@ def merge_episode_files(episodes_dir, output_file, max_steps=500,
                 if verbose:
                     print(f"Warning: Could not delete temporary file '{episode_file}': {e}")
 
-        # Remove temporary download directory if it was created
-        if temp_download_dir and os.path.exists(temp_download_dir):
-            try:
-                shutil.rmtree(temp_download_dir)
-                if verbose:
-                    print(f"✓ Cleaned up temporary download directory")
-            except Exception as e:
-                if verbose:
-                    print(f"Warning: Could not remove temp directory: {e}")
-
-    # Step 6: Delete files from S3 if requested and using S3
-    if use_s3 and delete_temp_files:
-        if verbose:
-            print(f"\n🗑️  Cleaning up S3 files...")
-
-        deleted = s3_manager.delete_files(s3_prefix)
-
-        if verbose:
-            print(f"✅ Deleted {deleted} files from S3")
-
-    # Calculate file size
     file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
 
     if verbose:
