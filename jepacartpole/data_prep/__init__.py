@@ -24,6 +24,8 @@ from .merge import (
     check_dataset_exists
 )
 
+from .latents import encode_dataset
+
 from .visualization import (
     plot_random_samples,
     plot_episode_sequence,
@@ -45,6 +47,8 @@ __all__ = [
     'merge_episode_files',
     'get_dataset_info',
     'check_dataset_exists',
+    # Latent encoding
+    'encode_dataset',
     # Visualization
     'plot_random_samples',
     'plot_episode_sequence',
