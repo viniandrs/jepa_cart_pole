@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class ConfigVAE:
     """Configuration for VAE encoder training (defaults follow World Models)."""
-    latent_dim: int = 4  # v2; v1 used 32 (see registry/v1-vae-z32)
+    latent_dim: int = 32
     beta: float = 1.0
     kl_tolerance: float = 0.5  # KL floor per latent dim (World Models)
     image_channels: int = 3
@@ -16,7 +16,7 @@ class ConfigVAE:
 @dataclass
 class ConfigJEPA:
     """Configuration for JEPA predictor training."""
-    z_dim: int = 4  # must match ConfigVAE.latent_dim
+    z_dim: int = 32
     action_dim: int = 1
     context_len: int = 2  # number of past latents fed to the predictor
     hidden_dim: int = 128

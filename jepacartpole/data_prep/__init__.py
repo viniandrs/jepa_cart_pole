@@ -24,7 +24,7 @@ from .merge import (
     check_dataset_exists
 )
 
-from .latents import encode_dataset
+from .latents import encode_dataset, frames_to_tensor
 
 from .visualization import (
     plot_random_samples,
@@ -49,6 +49,7 @@ __all__ = [
     'check_dataset_exists',
     # Latent encoding
     'encode_dataset',
+    'frames_to_tensor',
     # Visualization
     'plot_random_samples',
     'plot_episode_sequence',

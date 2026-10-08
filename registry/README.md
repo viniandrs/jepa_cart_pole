@@ -13,6 +13,3 @@ Executed notebooks of superseded model versions, kept so that results can be com
 
 | Version | Encoder | Superseded because | Date |
 |---|---|---|---|
-| [v1-vae-z32](v1-vae-z32/README.md) | World Models ConvVAE, `latent_dim=32` | Only 4/32 latent dims active; unused dims dominate sampled-latent JEPA training | 2026-10-08 |
-
-**Current version (in `notebooks/`):** v2 — ConvVAE with `latent_dim=4`, `kl_tolerance=0.5` (2-nat KL floor). Only 2 dims active; latents less precise than v1, JEPA 4.0× below baseline (sampled z) vs 8.6× for v1. See the analysis at the end of `notebooks/2-vae/3-vae_jepa.ipynb`.

@@ -66,7 +66,7 @@ def encode_dataset(encoder, h5_path=None, output_path=None, batch_size=500,
 
         # Infer the latent dimension from a single frame
         with torch.no_grad():
-            z_dim = encoder.encode(_to_tensor(h5_in['images'][0, :1], device))[0].shape[1]
+            z_dim = encoder.encode(frames_to_tensor(h5_in['images'][0, :1], device))[0].shape[1]
 
         if verbose:
             print(f"Encoding {num_episodes} episodes × {max_steps} steps "
@@ -93,7 +93,7 @@ def encode_dataset(encoder, h5_path=None, output_path=None, batch_size=500,
                 images = h5_in['images'][ep]
                 mus, logvars = [], []
                 for start in range(0, max_steps, batch_size):
-                    mu, logvar = encoder.encode(_to_tensor(images[start:start + batch_size], device))
+                    mu, logvar = encoder.encode(frames_to_tensor(images[start:start + batch_size], device))
                     mus.append(mu.cpu().numpy())
                     logvars.append(logvar.cpu().numpy())
                 h5_out['mu'][ep] = np.concatenate(mus)
@@ -106,6 +106,6 @@ def encode_dataset(encoder, h5_path=None, output_path=None, batch_size=500,
     return output_path
 
 
-def _to_tensor(images, device):
+def frames_to_tensor(images, device):
     """Convert uint8 HWC frames to a float CHW tensor in [0, 1]."""
     return torch.from_numpy(images).permute(0, 3, 1, 2).float().div_(255.0).to(device)
