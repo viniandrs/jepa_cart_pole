@@ -2,6 +2,54 @@ import torch
 import torch.nn as nn
 from jepacartpole.config import ConfigVAE
 
+
+def make_conv_encoder(image_channels=3):
+    """
+    World Models conv encoder: (C, 64, 64) -> 1024 features. No padding, so
+    spatial sizes are 64 -> 31 -> 14 -> 6 -> 2. Shared by the VAE and the
+    full JEPA encoder.
+    """
+    return nn.Sequential(
+        # Input: n_channels x 64 x 64
+        nn.Conv2d(image_channels, 32, kernel_size=4, stride=2), # output: (32, 31, 31)
+        nn.ReLU(),
+
+        nn.Conv2d(32, 64, kernel_size=4, stride=2), # output: (64, 14, 14)
+        nn.ReLU(),
+
+        nn.Conv2d(64, 128, kernel_size=4, stride=2), # output: (128, 6, 6)
+        nn.ReLU(),
+
+        nn.Conv2d(128, 256, kernel_size=4, stride=2), # output: (256, 2, 2)
+        nn.ReLU(),
+
+        nn.Flatten() # output: (1024)
+    )
+
+
+def make_conv_decoder(image_channels=3):
+    """
+    World Models deconv decoder: 1024 features -> (C, 64, 64) in [0, 1],
+    spatial sizes 1 -> 5 -> 13 -> 30 -> 64. Shared by the VAE and the
+    decoder trained on JEPA latents.
+    """
+    return nn.Sequential(
+        nn.Unflatten(1, (1024, 1, 1)), # output: (1024, 1, 1)
+
+        nn.ConvTranspose2d(1024, 128, kernel_size=5, stride=2), # output: (128, 5, 5)
+        nn.ReLU(),
+
+        nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2), # output: (64, 13, 13)
+        nn.ReLU(),
+
+        nn.ConvTranspose2d(64, 32, kernel_size=6, stride=2), # output: (32, 30, 30)
+        nn.ReLU(),
+
+        nn.ConvTranspose2d(32, image_channels, kernel_size=6, stride=2), # output: (C, 64, 64)
+        nn.Sigmoid()
+    )
+
+
 class VAE(nn.Module):
     """
     Convolutional VAE for 64x64 frames, following the ConvVAE of World Models
@@ -19,23 +67,8 @@ class VAE(nn.Module):
         self.kl_tolerance = config.kl_tolerance
         self.latent_dim = latent_dim
 
-        # Encoder
-        self.encoder = nn.Sequential(
-            # Input: n_channels x 64 x 64
-            nn.Conv2d(image_channels, 32, kernel_size=4, stride=2), # output: (32, 31, 31)
-            nn.ReLU(),
-
-            nn.Conv2d(32, 64, kernel_size=4, stride=2), # output: (64, 14, 14)
-            nn.ReLU(),
-
-            nn.Conv2d(64, 128, kernel_size=4, stride=2), # output: (128, 6, 6)
-            nn.ReLU(),
-
-            nn.Conv2d(128, 256, kernel_size=4, stride=2), # output: (256, 2, 2)
-            nn.ReLU(),
-
-            nn.Flatten() # output: (1024)
-        )
+        # Encoder: (C, 64, 64) -> 1024
+        self.encoder = make_conv_encoder(image_channels)
 
         # Latent space
         self.fc_mu = nn.Linear(256 * 2 * 2, latent_dim)
@@ -44,22 +77,8 @@ class VAE(nn.Module):
         # Decoder input
         self.decoder_input = nn.Linear(latent_dim, 1024)
 
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.Unflatten(1, (1024, 1, 1)), # output: (1024, 1, 1)
-
-            nn.ConvTranspose2d(1024, 128, kernel_size=5, stride=2), # output: (128, 5, 5)
-            nn.ReLU(),
-
-            nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2), # output: (64, 13, 13)
-            nn.ReLU(),
-
-            nn.ConvTranspose2d(64, 32, kernel_size=6, stride=2), # output: (32, 30, 30)
-            nn.ReLU(),
-
-            nn.ConvTranspose2d(32, image_channels, kernel_size=6, stride=2), # output: (C, 64, 64)
-            nn.Sigmoid()
-        )
+        # Decoder: 1024 -> (C, 64, 64)
+        self.decoder = make_conv_decoder(image_channels)
 
     def encode(self, x):
         h = self.encoder(x)
