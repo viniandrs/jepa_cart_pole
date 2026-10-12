@@ -34,3 +34,31 @@ class ConfigTransferLearning:
     pretrained: bool = True
     freeze_backbone: bool = True
     latent_dim: int = 16
+@dataclass
+class ConfigFullJEPA:
+    """Configuration for the full JEPA (encoder + predictor trained jointly)."""
+    latent_dim: int = 32
+    image_channels: int = 3
+    context_len: int = 2  # number of past latents fed to the predictor
+    hidden_dim: int = 128  # predictor MLP width
+    action_dim: int = 1
+    batch_size: int = 256
+    epochs: int = 30
+    learning_rate: float = 3e-4
+    weight_decay: float = 1e-5
+    ema_momentum: float = 0.99  # target encoder momentum at the start (0 = no EMA, target = encoder)
+    ema_momentum_end: float = 0.99  # momentum at the end (cosine schedule); 1.0 (I-JEPA) freezes the target too early here
+    pred_weight: float = 25.0  # VICReg invariance weight, here the prediction loss
+    var_weight: float = 25.0  # VICReg variance weight (0 disables)
+    cov_weight: float = 1.0  # VICReg covariance weight (0 disables)
+    var_gamma: float = 1.0  # target std per regularised dimension
+    expander_dim: int = 256  # VICReg expander width; 0 = variance/covariance applied directly on z (fails here)
+    val_fraction: float = 0.1  # fraction of episodes held out for validation
+
+@dataclass
+class ConfigLatentDecoder:
+    """Configuration for the decoder trained on frozen JEPA latents (qualitative only)."""
+    batch_size: int = 100
+    epochs: int = 10
+    learning_rate: float = 1e-4
+    weight_decay: float = 1e-6
